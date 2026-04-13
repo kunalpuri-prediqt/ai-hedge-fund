@@ -7,12 +7,14 @@ Usage (IPython / Jupyter):
     analyze("AAPL", timeframe="weekly", atr_period=10, key_value=1)
 
 Dependencies:
-    pip install yfinance pandas numpy
+    pip install yfinance pandas numpy matplotlib
 """
 
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -163,6 +165,55 @@ def _print_report(ticker: str, tf: str, df: pd.DataFrame, atr_period: int, key_v
     print()
 
 
+# ── Chart ───────────────────────────────────────────────────────────────────
+
+def _plot(ticker: str, tf: str, df: pd.DataFrame, atr_period: int, key_value: float):
+    """Price line + trailing stop + buy/sell markers."""
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    dates = df.index
+    close = df["Close"]
+    trail = df["Trail_Stop"]
+
+    # Price line
+    ax.plot(dates, close, color="#333333", linewidth=1.3, label="Close", zorder=2)
+
+    # Trailing stop — colored by position (green when long, red when short)
+    long_mask  = df["Position"] == 1
+    short_mask = df["Position"] == -1
+    ax.plot(dates[long_mask],  trail[long_mask],  color="#26a69a", linewidth=1, alpha=0.7, label="Stop (long)")
+    ax.plot(dates[short_mask], trail[short_mask], color="#ef5350", linewidth=1, alpha=0.7, label="Stop (short)")
+
+    # Buy markers
+    buys = df[df["Buy"]]
+    if not buys.empty:
+        ax.scatter(buys.index, buys["Close"], marker="^", s=120, c="#00c853",
+                   edgecolors="black", linewidths=0.5, zorder=5, label="Buy")
+
+    # Sell markers
+    sells = df[df["Sell"]]
+    if not sells.empty:
+        ax.scatter(sells.index, sells["Close"], marker="v", s=120, c="#ff1744",
+                   edgecolors="black", linewidths=0.5, zorder=5, label="Sell")
+
+    # Shade background between price and stop
+    ax.fill_between(dates, close, trail, where=close >= trail,
+                    color="#26a69a", alpha=0.08, interpolate=True)
+    ax.fill_between(dates, close, trail, where=close < trail,
+                    color="#ef5350", alpha=0.08, interpolate=True)
+
+    # Formatting
+    ax.set_title(f"UT Bot Alert  |  {ticker}  |  {tf}    (ATR {atr_period}, Key {key_value})",
+                 fontsize=13, fontweight="bold", pad=12)
+    ax.set_ylabel("Price", fontsize=11)
+    ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+    fig.autofmt_xdate(rotation=30)
+    fig.tight_layout()
+    plt.show()
+
+
 # ── Main entry point ────────────────────────────────────────────────────────
 
 def analyze(
@@ -170,6 +221,7 @@ def analyze(
     timeframe: str = "daily",
     atr_period: int = 10,
     key_value: float = 1.0,
+    plot: bool = True,
     show_data: bool = False,
 ):
     """
@@ -180,7 +232,8 @@ def analyze(
         timeframe:  "daily", "weekly", or "monthly"
         atr_period: ATR lookback period (default 10)
         key_value:  ATR multiplier / sensitivity (default 1.0, higher = wider stops)
-        show_data:  If True, return the full DataFrame instead of just printing
+        plot:       Show the chart (default True)
+        show_data:  If True, return the full DataFrame
 
     Examples:
         analyze("AAPL")
@@ -204,6 +257,9 @@ def analyze(
 
     df = ut_bot(df, atr_period=atr_period, key_value=key_value)
     _print_report(ticker, tf, df, atr_period, key_value)
+
+    if plot:
+        _plot(ticker, tf, df, atr_period, key_value)
 
     if show_data:
         return df
